@@ -418,21 +418,13 @@
         <input type="number" id="host-time-limit" value="15" min="5" max="60">
       </div>
 
-      <!-- KINYITHATÓ HALADÓ BEÁLLÍTÁSOK -->
+      <!-- HALADÓ BEÁLLÍTÁSOK: Apps Script Web App URL -->
       <details>
-        <summary>⚙️ Haladó Adatbázis Beállítások (Google Sheets URL & GID)</summary>
+        <summary>⚙️ Haladó Adatbázis Beállítások (Apps Script Web App URL)</summary>
         <div style="margin-top: 15px;">
           <div class="form-group">
-            <label>Alap CSV Pub URL:</label>
-            <input type="text" id="host-base-url" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vTFN3fX8DHjSTiUFg4L6b7I-i9gfnSQOz0w8uUMu4NycE1LjFEqGuMWYcr65GyGgHJmU1m1Bnsl3QLQ/pub?">
-          </div>
-          <div class="form-group">
-            <label>Players Fül GID:</label>
-            <input type="text" id="host-gid-players" value="0">
-          </div>
-          <div class="form-group">
-            <label>Quiz_Players Fül GID:</label>
-            <input type="text" id="host-gid-quiz" value="2024245949">
+            <label>Google Apps Script Web App URL:</label>
+            <input type="text" id="host-apps-script-url" value="https://script.google.com/macros/s/AKfycbzcxv5zzhC2Fg5mj9aMQ0zomRoOla9du1ExP2RNTJiSK5zCvinyyaTP3JgPsTZdHHq3/exec">
           </div>
         </div>
       </details>
@@ -456,7 +448,7 @@
       </div>
 
       <div id="sheets-loading-status" class="loading-spinner" style="display: none;">
-        ⏳ Adatok letöltése a Google Táblázatból (players & quiz_players)...
+        ⏳ Adatok letöltése a Google Apps Scripten keresztül...
       </div>
 
       <div class="btn-group">
@@ -596,132 +588,73 @@
       return x - Math.floor(x);
     }
 
-    function parseCSV(csvText) {
-      const lines = csvText.split(/\r\n|\n/);
-      const result = [];
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^["']|["']$/g, '').trim());
-        result.push(cols);
-      }
-      return result;
-    }
-
-    // Továbbfejlesztett CSV lekérdező CORS-proxy és JSONP támogatással
-    async function fetchCSVData(url) {
-      // Direct fetch try
-      try {
-        const res = await fetch(url);
-        if (res.ok) {
-          const text = await res.text();
-          if (text && text.length > 5) return text;
-        }
-      } catch (e) {
-        console.warn("Közvetlen fetch tiltva CORS miatt, próbálkozás proxy-kkal...");
-      }
-
-      // Fallback 1: CORS Proxy-k
-      const proxyUrls = [
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-        `https://corsproxy.org/?${encodeURIComponent(url)}`,
-        `https://thingproxy.freeboard.io/fetch/${url}`
-      ];
-
-      for (const pUrl of proxyUrls) {
-        try {
-          const response = await fetch(pUrl);
-          if (response.ok) {
-            const text = await response.text();
-            if (text && text.length > 5) return text;
-          }
-        } catch (e) {
-          console.warn("Proxy hiba:", pUrl);
-        }
-      }
-
-      // Fallback 2: JSONP a Google Apps Script/AllOrigins válaszra local file (origin: null) esetén
-      try {
-        const jsonpUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const res = await fetch(jsonpUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.contents) return data.contents;
-        }
-      } catch (e) {
-        console.warn("JSONP fallback hiba:", e);
-      }
-
-      return null;
-    }
-
-    async function loadGameDataAutomatically() {
+    async function loadGameDataViaAppsScript() {
       const loadingBox = document.getElementById('sheets-loading-status');
       if (loadingBox) loadingBox.style.display = 'block';
 
-      const baseUrl = document.getElementById('host-base-url').value.trim();
-      const gidPlayers = document.getElementById('host-gid-players').value.trim();
-      const gidQuiz = document.getElementById('host-gid-quiz').value.trim();
-
-      const playersUrl = `${baseUrl}gid=${gidPlayers}&single=true&output=csv`;
-      const quizUrl = `${baseUrl}gid=${gidQuiz}&single=true&output=csv`;
-
-      const [playersCsv, quizCsv] = await Promise.all([
-        fetchCSVData(playersUrl),
-        fetchCSVData(quizUrl)
-      ]);
-
-      if (!playersCsv || !quizCsv) {
-        alert("Nem sikerült letölteni a munkalapokat a Google Táblázatból! Ha helyi fájlból nyitottad meg (file:///), töltsd fel GitHub Pages-re!");
+      const scriptUrl = document.getElementById('host-apps-script-url').value.trim();
+      if (!scriptUrl || scriptUrl.includes("IDE_MASOLD")) {
+        alert("Kérlek add meg a Google Apps Script Web App URL-t a Haladó beállításokban!");
         if (loadingBox) loadingBox.style.display = 'none';
         return false;
       }
 
-      // 1. Players fül feldolgozása (Név -> Kép URL)
-      const playerRows = parseCSV(playersCsv);
-      const playerImages = {};
-      playerRows.forEach((cols, idx) => {
-        if (idx === 0 && (cols[0].toLowerCase().includes('name') || cols[0].toLowerCase().includes('név') || cols[0].toLowerCase().includes('player'))) return;
-        if (cols.length >= 2) {
-          const playerName = cols[0];
-          const playerImg = cols[1];
-          if (playerName && playerImg) {
-            playerImages[playerName.toLowerCase()] = playerImg;
-          }
-        }
-      });
-
-      // 2. Quiz_players fül feldolgozása (#, Megoldás, Opció 2, Opció 3, Opció 4)
-      const quizRows = parseCSV(quizQuiz = quizRows);
-      const assembled = [];
-
-      quizRows.forEach((cols, idx) => {
-        if (idx === 0 && (cols[0].toLowerCase() === '#' || cols[0].toLowerCase().includes('id') || cols[0].toLowerCase().includes('sorszám'))) return;
+      try {
+        const response = await fetch(scriptUrl);
+        if (!response.ok) throw new Error("HTTP hiba: " + response.status);
         
-        if (cols.length >= 5) {
-          const qId = cols[0];
-          const correctName = cols[1];
-          const opt2 = cols[2];
-          const opt3 = cols[3];
-          const opt4 = cols[4];
+        const data = await response.json();
+        const pRows = data.players || [];
+        const qRows = data.quiz_players || [];
 
-          const imgUrl = playerImages[correctName.toLowerCase()] || "";
-
-          if (qId && correctName) {
-            assembled.push({
-              id: qId,
-              name: correctName,
-              image: imgUrl,
-              options: [correctName, opt2, opt3, opt4],
-              shuffleSeed: Math.floor(Math.random() * 100000)
-            });
+        // 1. Players adatok feldolgozása
+        const playerImages = {};
+        pRows.forEach((row, idx) => {
+          if (idx === 0) return; // Fejléc kihagyása
+          if (row.length >= 2) {
+            const playerName = String(row[0]).trim();
+            const playerImg = String(row[1]).trim();
+            if (playerName && playerImg) {
+              playerImages[playerName.toLowerCase()] = playerImg;
+            }
           }
-        }
-      });
+        });
 
-      window.appState.assembledQuestions = assembled;
-      if (loadingBox) loadingBox.style.display = 'none';
-      return true;
+        // 2. Quiz_players adatok feldolgozása
+        const assembled = [];
+        qRows.forEach((row, idx) => {
+          if (idx === 0) return; // Fejléc kihagyása
+          if (row.length >= 5) {
+            const qId = String(row[0]).trim();
+            const correctName = String(row[1]).trim();
+            const opt2 = String(row[2]).trim();
+            const opt3 = String(row[3]).trim();
+            const opt4 = String(row[4]).trim();
+
+            const imgUrl = playerImages[correctName.toLowerCase()] || "";
+
+            if (qId && correctName) {
+              assembled.push({
+                id: qId,
+                name: correctName,
+                image: imgUrl,
+                options: [correctName, opt2, opt3, opt4],
+                shuffleSeed: Math.floor(Math.random() * 100000)
+              });
+            }
+          }
+        });
+
+        window.appState.assembledQuestions = assembled;
+        if (loadingBox) loadingBox.style.display = 'none';
+        return true;
+
+      } catch (e) {
+        console.error("Apps Script lekérdezési hiba:", e);
+        alert("Nem sikerült letölteni az adatokat az Apps Scripten keresztül. Ellenőrizd a Web App URL-t!");
+        if (loadingBox) loadingBox.style.display = 'none';
+        return false;
+      }
     }
 
     async function initHostRoom() {
@@ -747,7 +680,7 @@
 
       switchView('view-host-lobby');
       
-      const success = await loadGameDataAutomatically();
+      const success = await loadGameDataViaAppsScript();
       if (!success) {
         switchView('view-host-config');
         return;
